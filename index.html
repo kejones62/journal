@@ -28,3 +28,86 @@
   <select id="topic" onchange="updateSubtopics()">
     <option>Vehicle</option>
     <option>Home</option>
+    <option>Shop</option>
+    <option>Rocketry</option>
+    <option>Garden</option>
+    <option>Health</option>
+    <option>Other</option>
+  </select>
+
+  <label>Subtopic</label>
+  <select id="subtopic"></select>
+
+  <label>Entry</label>
+  <textarea id="entry" placeholder="What happened?"></textarea>
+
+  <button onclick="submit()">Log Entry</button>
+  <div id="status"></div>
+
+  <script>
+    const WORKER = "https://journal-relay.kellyjones1.workers.dev/";
+    const KEY = "Journal123!";
+    const SUBTOPICS = {
+      Vehicle: ["Tacoma","Corolla","Other"],
+      Home: ["Fort Mohave","Forest Grove","General"],
+      Shop: ["Laser Cutter","3D Printer","Electronics","General"],
+      Rocketry: ["Flight","Motor","Parachute","OROC","General"],
+      Garden: ["Fort Mohave","Forest Grove"],
+      Health: ["General"],
+      Other: ["General"]
+    };
+
+    function today() {
+      const d = new Date();
+      return [d.getMonth()+1, d.getDate(), d.getFullYear()].map((n,i) => i<2 ? String(n).padStart(2,"0") : n).join("/");
+    }
+
+    function updateSubtopics() {
+      const sel = document.getElementById("subtopic");
+      const topic = document.getElementById("topic").value;
+      sel.innerHTML = SUBTOPICS[topic].map(s => `<option>${s}</option>`).join("");
+    }
+
+    document.getElementById("date").value = today();
+    updateSubtopics();
+
+    async function submit() {
+      const status = document.getElementById("status");
+      const date = document.getElementById("date").value.trim();
+      const entry = document.getElementById("entry").value.trim();
+      if (!date || !entry) {
+        status.className = "err";
+        status.textContent = "Date and entry are required.";
+        return;
+      }
+      status.className = "";
+      status.textContent = "";
+      try {
+        const res = await fetch(WORKER, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            key: KEY,
+            date,
+            topic: document.getElementById("topic").value,
+            subtopic: document.getElementById("subtopic").value,
+            entry
+          })
+        });
+        const data = await res.json();
+        if (data.result === "success" || res.ok) {
+          status.className = "ok";
+          status.textContent = "Logged.";
+          document.getElementById("entry").value = "";
+          document.getElementById("date").value = today();
+        } else {
+          throw new Error(data.error || "Unknown error");
+        }
+      } catch(e) {
+        status.className = "err";
+        status.textContent = "Error: " + e.message;
+      }
+    }
+  </script>
+</body>
+</html>
