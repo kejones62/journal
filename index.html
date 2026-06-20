@@ -12,7 +12,6 @@
     input, select, textarea { width: 100%; padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 8px; background: white; }
     textarea { min-height: 120px; resize: vertical; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .ai-status { font-size: 12px; color: #888; margin-top: 4px; min-height: 18px; }
     button { width: 100%; margin-top: 20px; padding: 14px; font-size: 16px; background: #1a73e8; color: white; border: none; border-radius: 8px; cursor: pointer; }
     button:disabled { background: #aaa; }
     #status { margin-top: 12px; padding: 10px; border-radius: 8px; font-size: 14px; display: none; text-align: center; }
@@ -24,13 +23,12 @@
   <h1>Journal</h1>
 
   <label>Entry</label>
-  <textarea id="entry" placeholder="What happened?" oninput="scheduleClassify()"></textarea>
-  <div class="ai-status" id="ai-status"></div>
+  <textarea id="entry" placeholder="What happened?"></textarea>
 
   <div class="row">
     <div>
       <label>Topic</label>
-      <select id="topic" onchange="updateSubtopics(true)">
+      <select id="topic" onchange="updateSubtopics()">
         <option>Vehicle</option>
         <option>Home</option>
         <option>Shop</option>
@@ -65,74 +63,32 @@
       Other: ["General"]
     };
 
-    let classifyTimer = null;
-    let userOverrode = false;
-
     function today() {
       const d = new Date();
       return [String(d.getMonth()+1).padStart(2,"0"), String(d.getDate()).padStart(2,"0"), d.getFullYear()].join("/");
     }
 
-    function updateSubtopics(manual) {
-      if (manual) userOverrode = true;
+    function updateSubtopics() {
       const topic = document.getElementById("topic").value;
       const sel = document.getElementById("subtopic");
-      const current = sel.value;
       sel.innerHTML = SUBTOPICS[topic].map(s => `<option>${s}</option>`).join("");
-      if (SUBTOPICS[topic].includes(current)) sel.value = current;
+      localStorage.setItem("lastTopic", topic);
     }
 
-    function setClassification(topic, subtopic) {
-      if (userOverrode) return;
-      const topicSel = document.getElementById("topic");
-      topicSel.value = topic;
-      updateSubtopics(false);
-      const subtopicSel = document.getElementById("subtopic");
-      if (SUBTOPICS[topic] && SUBTOPICS[topic].includes(subtopic)) {
-        subtopicSel.value = subtopic;
+    function restoreLast() {
+      const topic = localStorage.getItem("lastTopic");
+      if (topic) document.getElementById("topic").value = topic;
+      updateSubtopics();
+      const subtopic = localStorage.getItem("lastSubtopic");
+      if (subtopic) {
+        const sel = document.getElementById("subtopic");
+        if ([...sel.options].some(o => o.value === subtopic)) sel.value = subtopic;
       }
     }
 
-    function scheduleClassify() {
-      userOverrode = false;
-      clearTimeout(classifyTimer);
-      const entry = document.getElementById("entry").value.trim();
-      if (entry.length < 10) return;
-      classifyTimer = setTimeout(() => classify(entry), 1000);
-    }
-
-    async function classify(entry) {
-      const aiStatus = document.getElementById("ai-status");
-      aiStatus.textContent = "Categorizing...";
-      try {
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-6",
-            max_tokens: 100,
-            system: `You categorize journal entries. Reply with ONLY a JSON object like {"topic":"X","subtopic":"Y"}.
-Topics and subtopics:
-- Vehicle: Tacoma, Corolla, Other
-- Home: Fort Mohave, Forest Grove, General
-- Shop: Laser Cutter, 3D Printer, Electronics, General
-- Rocketry: Flight, Motor, Parachute, OROC, General
-- Garden: Fort Mohave, Forest Grove
-- Health: General
-- Other: General
-If unsure, use Other/General.`,
-            messages: [{ role: "user", content: entry }]
-          })
-        });
-        const data = await res.json();
-        const text = data.content[0].text.trim();
-        const parsed = JSON.parse(text);
-        setClassification(parsed.topic, parsed.subtopic);
-        aiStatus.textContent = "Auto-categorized (change above if wrong)";
-      } catch(e) {
-        aiStatus.textContent = "";
-      }
-    }
+    document.getElementById("subtopic").addEventListener("change", function() {
+      localStorage.setItem("lastSubtopic", this.value);
+    });
 
     async function submitEntry() {
       const btn = document.getElementById("submitBtn");
@@ -144,19 +100,17 @@ If unsure, use Other/General.`,
         status.textContent = "Date and entry are required.";
         return;
       }
+      const topic = document.getElementById("topic").value;
+      const subtopic = document.getElementById("subtopic").value;
+      localStorage.setItem("lastTopic", topic);
+      localStorage.setItem("lastSubtopic", subtopic);
       btn.disabled = true;
       btn.textContent = "Logging...";
       status.className = "";
       try {
         const res = await fetch(SHEET_URL, {
           method: "POST",
-          body: JSON.stringify({
-            key: KEY,
-            date,
-            topic: document.getElementById("topic").value,
-            subtopic: document.getElementById("subtopic").value,
-            entry
-          })
+          body: JSON.stringify({ key: KEY, date, topic, subtopic, entry })
         });
         const data = await res.json();
         if (data.result === "success") {
@@ -164,9 +118,6 @@ If unsure, use Other/General.`,
           status.textContent = "Logged.";
           document.getElementById("entry").value = "";
           document.getElementById("date").value = today();
-          userOverrode = false;
-          document.getElementById("ai-status").textContent = "";
-          updateSubtopics(false);
         } else {
           throw new Error(data.error || "Unknown error");
         }
@@ -179,7 +130,7 @@ If unsure, use Other/General.`,
     }
 
     document.getElementById("date").value = today();
-    updateSubtopics(false);
+    restoreLast();
   </script>
 </body>
 </html>
